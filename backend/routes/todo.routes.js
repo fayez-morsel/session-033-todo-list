@@ -106,4 +106,22 @@ router.patch("/:id", requireAuth, async (req, res) => {
   }
 });
 
+/**
+ * DELETE /todos/:id
+ */
+router.delete("/:id", requireAuth, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const { rowCount } = await q(
+      "DELETE FROM todo WHERE family_id=$1 AND id=$2",
+      [req.user.fid, id]
+    );
+    if (!rowCount) return res.status(404).json({ error: "Not found" });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error("delete todo error", e);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
 export default router;
