@@ -31,6 +31,26 @@ router.get('/', requireAuth, async (req, res) => {
   }
 });
 
+/**
+ * POST /todos
+ * body: { title, description?, due_at?, assignee_id }
+ */
+router.post('/', requireAuth, async (req, res) => {
+  const { title, description, due_at, assignee_id } = req.body;
+  if (!title || !assignee_id) return res.status(400).json({ error: 'Missing fields' });
 
+  try {
+    const { rows } = await q(
+      `INSERT INTO todo(family_id, creator_id, assignee_id, title, description, due_at)
+       VALUES($1,$2,$3,$4,$5,$6)
+       RETURNING *`,
+      [req.user.fid, req.user.uid, assignee_id, title, description || null, due_at || null]
+    );
+    res.status(201).json(rows[0]);
+  } catch (e) {
+    console.error('create todo error', e);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
 
 export default router;
