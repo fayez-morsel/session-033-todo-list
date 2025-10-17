@@ -6,7 +6,6 @@ import {
   type ChangeEvent,
 } from "react";
 import {
-  Filter,
   LayoutGrid,
   List,
   Plus,
@@ -231,10 +230,10 @@ export default function Tasks() {
           </div>
 
           <div className="flex items-center gap-2 self-end sm:self-auto">
-            <button className="flex items-center gap-2 rounded-full border border-gray-200 bg-gray-50 px-4 py-2 text-sm font-semibold text-gray-600 transition hover:border-primary hover:text-primary">
+            {/* <button className="flex items-center gap-2 rounded-full border border-gray-200 bg-gray-50 px-4 py-2 text-sm font-semibold text-gray-600 transition hover:border-primary hover:text-primary">
               <Filter size={16} />
               Filter
-            </button>
+            </button> */}
             <div className="flex overflow-hidden rounded-full border border-gray-200">
               <button
                 className={`grid h-10 w-10 place-items-center transition ${
