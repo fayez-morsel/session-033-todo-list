@@ -25,7 +25,6 @@ type FormState = {
   description: string;
   date: string;
   time: string;
-  assigneeId: string;
   status: TaskStatus;
 };
 
@@ -79,7 +78,6 @@ export default function Tasks() {
       description: "",
       date: "",
       time: "",
-      assigneeId: currentUser?.id ? String(currentUser.id) : "",
       status: "pending",
     }),
     [currentUser?.id]
@@ -119,9 +117,7 @@ export default function Tasks() {
     [tasks]
   );
 
-  const canSave =
-    !!form.title.trim() &&
-    !!(Number(form.assigneeId) || currentUser?.id);
+  const canSave = !!form.title.trim();
 
   const openCreateModal = () => {
     setModalMode("create");
@@ -140,7 +136,6 @@ export default function Tasks() {
       description: task.description ?? "",
       date,
       time,
-      assigneeId: String(task.assigneeId ?? ""),
       status: task.status,
     });
     setFormError(null);
@@ -166,9 +161,13 @@ export default function Tasks() {
       setFormError("Task title is required.");
       return;
     }
-    const assigneeId = Number(form.assigneeId) || currentUser?.id;
-    if (!assigneeId) {
-      setFormError("Assign this task to a valid family member.");
+    const assigneeId =
+      modalMode === "edit"
+        ? editingTask?.assigneeId ?? currentUser?.id
+        : currentUser?.id;
+
+    if (assigneeId == null) {
+      setFormError("Sign in to assign tasks to yourself.");
       return;
     }
 
@@ -402,17 +401,6 @@ export default function Tasks() {
                 onChange={handleInput("time")}
               />
             </div>
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-gray-700">Assign To</label>
-            <input
-              type="number"
-              className="w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm focus:border-primary focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20"
-              value={form.assigneeId}
-              onChange={handleInput("assigneeId")}
-              placeholder="Select family member (id)"
-              min={0}
-            />
           </div>
           <div className="flex items-center gap-3 rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3">
             <input
