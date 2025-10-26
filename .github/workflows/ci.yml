@@ -18,6 +18,5 @@ jobs:
        
        - name: Create a text file and add content
          run: |
-           touch example.text
-           echo "hello" > example.text
-           cat example 
+           cd backend
+           pm2 start index.js
