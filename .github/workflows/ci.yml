@@ -20,7 +20,7 @@ jobs:
 
       - name: Install backend dependencies
         working-directory: backend
-        run: npm ci
+        run: npm i
 
       - name: Install PM2 globally
         run: npm install -g pm2
