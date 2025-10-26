@@ -1,35 +1,42 @@
-name : full stack CI
+name: full stack
+
 on:
-    pull_request:
-        branches: [ main ]
+  pull_request:
+    branches: [main]
+
 jobs:
-    ci-test:
-        timeout-minutes: 10
-        runs-on: ubuntu-latest
-        steps:
-          - name: Checkout code
-            uses: actions/checkout@v4.0.0
-                
-          - name: intall the backend dependencies
-            run : |
-                cd backend 
-                npm i 
-                cd ..
+  ci-test:
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-          - name: intall the frontend dependencies
-            run : |
-                cd frontend 
-                npm i 
-                cd ..
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
 
-          - name: Install PM2 globally
-            run : npm i --global pm2
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm i
 
-          - name: run backend
-            run : 
+      - name: Install PM2 globally
+        run: npm install -g pm2
 
-          - name: test backend status
-            run : |
-                cd backend
-                npm i
-                pm2 start src/server.js
+      - name: Start backend server with PM2
+        working-directory: backend
+        run: |
+          pm2 start src/server.js --name backend
+          sleep 5
+          pm2 list
+          curl -I http://localhost:4000 || echo "Server not responding (check port)"
+
+      - name: Run backend tests
+        working-directory: backend
+        run: npm test
+
+      - name: Stop PM2 after tests
+        run: pm2 kill
