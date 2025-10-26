@@ -1,0 +1,23 @@
+name: full stack
+
+on: 
+  pull_request:
+    branches:
+      -main
+  
+jobs:
+  ci-test:
+     timeout-minutes: 10
+     runs-on: ubuntu-latest
+     steps:
+       - name: Checkout code
+         uses: actions/Checkout@v4
+
+       - name: List files
+         run: ls -latest
+       
+       - name: Create a text file and add content
+         run: |
+           touch example.text
+           echo "hello" > example.text
+           cat example 
