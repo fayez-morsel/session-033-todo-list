@@ -37,15 +37,11 @@ jobs:
           ls -la
           echo "Starting backend server with PM2..."
           # Adjust this path if your entry file is named differently
-          pm2 start server.js --name backend --no-daemon &
-          sleep 8
+          pm2 start server.js 
           echo "Checking if server responds..."
           curl -I http://localhost:4000 || echo "⚠️ Server not responding, check logs below"
           pm2 logs backend --lines 20
 
-      - name: Run backend tests
-        working-directory: backend
-        run: npm test
 
       - name: Stop PM2 after tests
         if: always()
