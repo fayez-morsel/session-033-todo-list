@@ -16,7 +16,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Install backend dependencies
         working-directory: backend
@@ -31,7 +31,7 @@ jobs:
           pm2 start src/server.js --name backend
           sleep 5
           pm2 list
-          curl -I http://localhost:3000 || echo "Server not responding (check port)"
+          curl -I http://localhost:4000 || echo "Server not responding (check port)"
 
       - name: Run backend tests
         working-directory: backend
@@ -40,4 +40,4 @@ jobs:
       - name: Stop PM2 after tests
         run: pm2 kill
 
-        
+
