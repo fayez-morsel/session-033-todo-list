@@ -9,33 +9,33 @@ jobs:
     runs-on: ubuntu-latest
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
-steps:
-  - name: Checkout repository
-    uses: actions/checkout@v4
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-  - name: Setup Node
-    uses: actions/setup-node@v4
-    with:
-      node-version: 20
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
 
-  - name: Install backend dependencies
-    working-directory: backend
-    run: npm ci
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
 
-  - name: Install PM2 globally
-    run: npm install -g pm2
+      - name: Install PM2 globally
+        run: npm install -g pm2
 
-  - name: Start backend server with PM2
-    working-directory: backend
-    run: |
-      pm2 start src/server.js --name backend
-      sleep 5
-      pm2 list
-      curl -I http://localhost:3000 || echo "Server not responding (check port)"
+      - name: Start backend server with PM2
+        working-directory: backend
+        run: |
+          pm2 start src/server.js --name backend
+          sleep 5
+          pm2 list
+          curl -I http://localhost:3000 || echo "Server not responding (check port)"
 
-  - name: Run backend tests
-    working-directory: backend
-    run: npm test
+      - name: Run backend tests
+        working-directory: backend
+        run: npm test
 
-  - name: Stop PM2 after tests
-    run: pm2 kill
+      - name: Stop PM2 after tests
+        run: pm2 kill
