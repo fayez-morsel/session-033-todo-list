@@ -1,0 +1,110 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  font-family: "Inter", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  --app-bg: #f6f8fb;
+  --app-text: #1f2933;
+  --text-muted: #64748b;
+  --surface: #ffffff;
+  --surface-alt: #f1f5f9;
+  --surface-border: rgba(15, 23, 42, 0.08);
+  --surface-border-strong: rgba(15, 23, 42, 0.12);
+  --surface-shadow: 0 30px 70px rgba(15, 23, 42, 0.12);
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  --app-bg: #0f172a;
+  --app-text: #e2e8f0;
+  --text-muted: #94a3b8;
+  --surface: #1f2937;
+  --surface-alt: #111827;
+  --surface-border: rgba(148, 163, 184, 0.2);
+  --surface-border-strong: rgba(148, 163, 184, 0.35);
+  --surface-shadow: 0 30px 70px rgba(2, 6, 23, 0.55);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--app-bg);
+  color: var(--app-text);
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button {
+  font-family: inherit;
+}
+
+.surface {
+  background-color: var(--surface);
+}
+
+.surface-alt {
+  background-color: var(--surface-alt);
+}
+
+.text-muted {
+  color: var(--text-muted);
+}
+
+.border-surface {
+  border-color: var(--surface-border) !important;
+}
+
+.border-surface-strong {
+  border-color: var(--surface-border-strong) !important;
+}
+
+.shadow-surface {
+  box-shadow: var(--surface-shadow);
+}
+
+[data-theme="dark"] [class*="bg-white"] {
+  background-color: var(--surface) !important;
+}
+
+[data-theme="dark"] [class*="bg-gray-50"] {
+  background-color: var(--surface-alt) !important;
+}
+
+[data-theme="dark"] [class*="bg-gray-100"] {
+  background-color: rgba(148, 163, 184, 0.12) !important;
+}
+
+[data-theme="dark"] [class*="border-gray-200"] {
+  border-color: var(--surface-border) !important;
+}
+
+[data-theme="dark"] [class*="border-gray-300"] {
+  border-color: var(--surface-border-strong) !important;
+}
+
+[data-theme="dark"] [class*="text-gray-500"],
+[data-theme="dark"] [class*="text-gray-600"] {
+  color: var(--text-muted) !important;
+}
+
+[data-theme="dark"] [class*="text-gray-700"],
+[data-theme="dark"] [class*="text-gray-900"] {
+  color: var(--app-text) !important;
+}
+
+[data-theme="dark"] [class*="bg-white/"] {
+  background-color: rgba(31, 41, 55, 0.9) !important;
+}
