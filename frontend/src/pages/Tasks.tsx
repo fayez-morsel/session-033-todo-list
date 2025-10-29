@@ -12,13 +12,15 @@ import {
   UserRound,
   UsersRound,
   CheckCircle2,
+  ArrowUpDown,
 } from "lucide-react";
 import { useTaskStore } from "../store/tasks";
 import { useAuthStore } from "../store/auth";
-import type { Task, TaskStatus } from "../types";
+import type { Task, TaskStatus, Member } from "../types";
 import TaskCard from "../components/TaskCard";
 import TaskRow from "../components/TaskRow";
 import Modal from "../components/Modal";
+import { fetchMembersApi } from "../services/endpoints";
 
 type FormState = {
   title: string;
@@ -26,6 +28,7 @@ type FormState = {
   date: string;
   time: string;
   status: TaskStatus;
+  assigneeId: number | null;
 };
 
 type ModalMode = "create" | "edit";
@@ -52,6 +55,9 @@ function combineDateTime(date: string, time: string) {
 const FILTERS = ["all", "me", "completed"] as const;
 type FilterKey = (typeof FILTERS)[number];
 
+const SORT_OPTIONS = ["created", "due", "alphabetical"] as const;
+type SortKey = (typeof SORT_OPTIONS)[number];
+
 export default function Tasks() {
   const {
     tasks,
@@ -71,6 +77,9 @@ export default function Tasks() {
   const [modalMode, setModalMode] = useState<ModalMode>("create");
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [activeFilter, setActiveFilter] = useState<FilterKey>("all");
+  const [activeSort, setActiveSort] = useState<SortKey>("created");
+  const [members, setMembers] = useState<Member[]>([]);
+  const [showSortMenu, setShowSortMenu] = useState(false);
 
   const makeInitialForm = useCallback(
     (): FormState => ({
@@ -79,6 +88,7 @@ export default function Tasks() {
       date: "",
       time: "",
       status: "pending",
+      assigneeId: currentUser?.id ?? null,
     }),
     [currentUser?.id]
   );
@@ -107,15 +117,39 @@ export default function Tasks() {
     fetch();
   }, [activeFilter, currentUser?.id, setFilters, fetch]);
 
-  const sorted = useMemo(
-    () =>
-      [...tasks].sort(
-        (a, b) =>
-          new Date(b.createdAt ?? 0).getTime() -
-          new Date(a.createdAt ?? 0).getTime()
-      ),
-    [tasks]
-  );
+  useEffect(() => {
+    const loadMembers = async () => {
+      try {
+        const data = await fetchMembersApi();
+        setMembers(data);
+      } catch (error) {
+        console.error("Failed to fetch members:", error);
+      }
+    };
+    loadMembers();
+  }, []);
+
+  const sorted = useMemo(() => {
+    const tasksCopy = [...tasks];
+    switch (activeSort) {
+      case "created":
+        return tasksCopy.sort(
+          (a, b) =>
+            new Date(b.createdAt ?? 0).getTime() -
+            new Date(a.createdAt ?? 0).getTime()
+        );
+      case "due":
+        return tasksCopy.sort((a, b) => {
+          const aDate = a.dueAt ? new Date(a.dueAt).getTime() : Infinity;
+          const bDate = b.dueAt ? new Date(b.dueAt).getTime() : Infinity;
+          return aDate - bDate;
+        });
+      case "alphabetical":
+        return tasksCopy.sort((a, b) => a.title.localeCompare(b.title));
+      default:
+        return tasksCopy;
+    }
+  }, [tasks, activeSort]);
 
   const canSave = !!form.title.trim();
 
@@ -137,6 +171,7 @@ export default function Tasks() {
       date,
       time,
       status: task.status,
+      assigneeId: task.assigneeId,
     });
     setFormError(null);
     setOpen(true);
@@ -161,13 +196,10 @@ export default function Tasks() {
       setFormError("Task title is required.");
       return;
     }
-    const assigneeId =
-      modalMode === "edit"
-        ? editingTask?.assigneeId ?? currentUser?.id
-        : currentUser?.id;
+    const assigneeId = form.assigneeId;
 
     if (assigneeId == null) {
-      setFormError("Sign in to assign tasks to yourself.");
+      setFormError("Please select an assignee.");
       return;
     }
 
@@ -209,6 +241,17 @@ export default function Tasks() {
         return "Completed";
       default:
         return filter;
+    }
+  };
+
+  const sortLabel = (sort: SortKey) => {
+    switch (sort) {
+      case "created":
+        return "Created Date";
+      case "due":
+        return "Due Date";
+      case "alphabetical":
+        return "Alphabetical";
     }
   };
 
@@ -260,33 +303,65 @@ export default function Tasks() {
           </div>
         </header>
 
-        <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
-          <div className="inline-flex rounded-full border border-gray-200 bg-gray-50 p-1">
-            {FILTERS.map((filter) => {
-              const disabled = filter === "me" && !currentUser?.id;
-              return (
-                <button
-                  key={filter}
-                  className={`flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition ${
-                    activeFilter === filter
-                      ? "bg-white text-primary shadow"
-                      : "text-gray-500 hover:text-gray-700"
-                  } ${disabled ? "cursor-not-allowed opacity-60 hover:text-gray-500" : ""}`}
-                  onClick={() => !disabled && setActiveFilter(filter)}
-                  type="button"
-                  disabled={disabled}
-                >
-                  {filter === "all" && <UsersRound size={16} />}
-                  {filter === "me" && <UserRound size={16} />}
-                  {filter === "completed" && <CheckCircle2 size={16} />}
-                  {filterLabel(filter)}
-                </button>
-              );
-            })}
+        <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="flex flex-wrap rounded-full border border-gray-200 bg-gray-50 p-1">
+              {FILTERS.map((filter) => {
+                const disabled = filter === "me" && !currentUser?.id;
+                return (
+                  <button
+                    key={filter}
+                    className={`flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition ${
+                      activeFilter === filter
+                        ? "bg-white text-primary shadow"
+                        : "text-gray-500 hover:text-gray-700"
+                    } ${disabled ? "cursor-not-allowed opacity-60 hover:text-gray-500" : ""}`}
+                    onClick={() => !disabled && setActiveFilter(filter)}
+                    type="button"
+                    disabled={disabled}
+                  >
+                    {filter === "all" && <UsersRound size={16} />}
+                    {filter === "me" && <UserRound size={16} />}
+                    {filter === "completed" && <CheckCircle2 size={16} />}
+                    {filterLabel(filter)}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="relative">
+              <button
+                className="flex items-center gap-2 rounded-full border border-gray-200 bg-gray-50 px-4 py-2 text-sm font-semibold text-gray-600 transition hover:border-primary hover:text-primary"
+                onClick={() => setShowSortMenu(!showSortMenu)}
+              >
+                <ArrowUpDown size={16} />
+                Sort: {sortLabel(activeSort)}
+              </button>
+              {showSortMenu && (
+                <div className="absolute top-full mt-2 w-full min-w-[200px] rounded-2xl border border-gray-200 bg-white p-2 shadow-lg z-10">
+                  {SORT_OPTIONS.map((sort) => (
+                    <button
+                      key={sort}
+                      className={`w-full text-left px-3 py-2 text-sm rounded-xl transition ${
+                        activeSort === sort
+                          ? "bg-primary text-white"
+                          : "text-gray-600 hover:bg-gray-100"
+                      }`}
+                      onClick={() => {
+                        setActiveSort(sort);
+                        setShowSortMenu(false);
+                      }}
+                    >
+                      {sortLabel(sort)}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           <button
-            className="flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-semibold text-white shadow-[0_14px_30px_rgba(76,175,80,0.3)] transition hover:bg-primaryDark"
+            className="flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-semibold text-white shadow-[0_14px_30px_rgba(76,175,80,0.3)] transition hover:bg-primaryDark self-start sm:self-auto"
             onClick={openCreateModal}
           >
             <Plus size={16} />
@@ -401,6 +476,26 @@ export default function Tasks() {
                 onChange={handleInput("time")}
               />
             </div>
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-gray-700">Assignee</label>
+            <select
+              className="w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm focus:border-primary focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20"
+              value={form.assigneeId ?? ""}
+              onChange={(e) =>
+                setForm((prev) => ({
+                  ...prev,
+                  assigneeId: e.target.value ? Number(e.target.value) : null,
+                }))
+              }
+            >
+              <option value="">Select an assignee</option>
+              {members.map((member) => (
+                <option key={member.id} value={member.id}>
+                  {member.fullName}
+                </option>
+              ))}
+            </select>
           </div>
           <div className="flex items-center gap-3 rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3">
             <input

@@ -1,0 +1,48 @@
+name: Full Stack CI
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  ci-test:
+    name: Run Full Stack Tests
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      PORT: 4000
+      NODE_ENV: test
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Install PM2 globally
+        run: npm install -g pm2
+
+      - name: Start backend server with PM2
+        working-directory: backend
+        run: |
+          echo "Files in backend directory:"
+          ls -la
+          echo "Starting backend server with PM2..."
+          # Adjust this path if your entry file is named differently
+          pm2 start server.js 
+          echo "Checking if server responds..."
+          curl -I http://localhost:4000 || echo "⚠️ Server not responding, check logs below"
+          pm2 logs backend --lines 20
+
+
+      - name: Stop PM2 after tests
+        if: always()
+        run: pm2 kill

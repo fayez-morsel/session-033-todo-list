@@ -86,6 +86,7 @@ export default function Auth() {
                   }}
                   placeholder="Enter your full name"
                   required
+                  autoComplete="off"
                 />
               </div>
             )}
@@ -101,6 +102,7 @@ export default function Auth() {
                 }}
                 placeholder="your@email.com"
                 required
+                autoComplete="off"
               />
             </div>
             <div className="space-y-1.5">
@@ -115,6 +117,7 @@ export default function Auth() {
                 }}
                 placeholder="********"
                 required
+                autoComplete="off"
               />
             </div>
             {error && (
