@@ -10,7 +10,7 @@ test("user can create, view, and delete a task", async ({ page }) => {
 
   await page.goto("/");
   await page.getByRole("link", { name: "Get Started" }).click();
-  await page.getByRole("button", { name: "Register" }).click();
+  await page.getByRole("button", { name: "Register" }).first().click();
 
   await page.getByPlaceholder("Enter your full name").fill(fullName);
   await page.getByPlaceholder("your@email.com").fill(email);
@@ -101,4 +101,3 @@ test("user can create, view, and delete a task", async ({ page }) => {
 
   await expect(page.getByText("No tasks yet", { exact: false })).toBeVisible();
 });
-
