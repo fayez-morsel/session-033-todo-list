@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { Link2 } from "lucide-react";
 import { useAuthStore } from "../store/auth";
@@ -9,8 +9,23 @@ export default function Invite() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const { joinWithInvite, error, loading, clearError } = useAuthStore();
+  const { joinWithInvite, error, loading, clearError, currentUser } = useAuthStore((state) => ({
+    joinWithInvite: state.joinWithInvite,
+    error: state.error,
+    loading: state.loading,
+    clearError: state.clearError,
+    currentUser: state.currentUser,
+  }));
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!currentUser) return;
+    if (currentUser.familyId) {
+      navigate("/dashboard", { replace: true });
+    } else {
+      navigate("/family", { replace: true });
+    }
+  }, [currentUser, navigate]);
 
   async function submit() {
     if (!token.trim() || !name.trim() || !email.trim() || !password.trim()) return;

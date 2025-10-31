@@ -29,6 +29,16 @@ type MemberApi = {
   role?: Member["role"];
 };
 
+export type IncomingInviteApi = {
+  id: string;
+  familyId: string;
+  familyName: string;
+  senderName?: string | null;
+  senderEmail?: string | null;
+  createdAt: string;
+  expiresAt: string;
+};
+
 function mapTaskFromApi(task: TaskApi): Task {
   return {
     id: task.id,
@@ -87,12 +97,48 @@ export const registerApi = (cred: AuthCredentials) =>
 export const joinWithInviteApi = (payload: InviteJoinPayload) =>
   api.post<AuthResponse>("/auth/accept-invite", payload).then(r => r.data);
 
-export const createInviteApi = (expiresInHours?: number) =>
+export const createFamilyApi = (name?: string) =>
+  api.post<AuthResponse>("/families", { name }).then(r => r.data);
+
+export const joinFamilyWithTokenApi = (token: string, forceLeave?: boolean) => {
+  const payload: { token: string; forceLeave?: boolean } = { token };
+  if (forceLeave) payload.forceLeave = true;
+  return api.post<AuthResponse>("/families/join", payload).then(r => r.data);
+};
+
+export const createInviteApi = (payload?: { expiresInHours?: number; email?: string }) =>
   api
-    .post<{ token: string; inviteId: number; expiresAt: string }>("/invites", {
-      expiresInHours,
-    })
+    .post<{
+      token: string;
+      inviteId: string;
+      expiresAt: string;
+      email?: string;
+      inviteeHasFamily?: boolean;
+      inviteeRecognized?: boolean;
+      emailSent?: boolean;
+      invitee?: {
+        id: number;
+        email?: string;
+        familyId: number | null;
+        familyLabel?: string | null;
+        fullName?: string | null;
+      };
+    }>(
+      "/invites",
+      payload ?? {}
+    )
     .then(r => r.data);
+
+export const fetchIncomingInvitesApi = () =>
+  api.get<IncomingInviteApi[]>("/invites/mine").then(r => r.data);
+
+export const acceptInviteByIdApi = (id: string, forceLeave?: boolean) =>
+  api
+    .post<AuthResponse>(`/invites/${id}/accept`, forceLeave ? { forceLeave } : {})
+    .then(r => r.data);
+
+export const declineInviteApi = (id: string) =>
+  api.post<{ ok: true }>(`/invites/${id}/decline`, {}).then(r => r.data);
 
 // Users
 export const fetchMembersApi = () =>

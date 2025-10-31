@@ -5,44 +5,134 @@ on:
     branches: [main]
 
 jobs:
-  ci-test:
-    name: Run Full Stack Tests
-    timeout-minutes: 10
+  test:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     env:
+      BACKEND_PORT: 4000
+      FRONTEND_PORT: 5173
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      PORT: 4000
-      NODE_ENV: test
-
+      JWT_SECRET: ${{ secrets.JWT_SECRET }}
+      CLIENT_ORIGIN: ${{ secrets.CLIENT_ORIGIN }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            backend/package-lock.json
+            frontend/package-lock.json
+
+      - name: Install root dependencies
+        run: npm ci
 
       - name: Install backend dependencies
         working-directory: backend
         run: npm ci
 
-      - name: Install PM2 globally
-        run: npm install -g pm2
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
 
-      - name: Start backend server with PM2
-        working-directory: backend
+      - name: Build frontend bundle
+        working-directory: frontend
+        env:
+          VITE_API_URL: http://127.0.0.1:${{ env.BACKEND_PORT }}
+        run: npm run build
+
+      - name: Install PM2
+        run: npm install --global pm2
+
+      - name: Verify required secrets
         run: |
-          echo "Files in backend directory:"
-          ls -la
-          echo "Starting backend server with PM2..."
-          # Adjust this path if your entry file is named differently
-          pm2 start server.js 
-          echo "Checking if server responds..."
-          curl -I http://localhost:4000 || echo "⚠️ Server not responding, check logs below"
-          pm2 logs backend --lines 20
+          set -euo pipefail
+          if [ -z "${DATABASE_URL:-}" ]; then
+            echo "DATABASE_URL secret is not configured." >&2
+            exit 1
+          fi
+          if [ -z "${JWT_SECRET:-}" ]; then
+            echo "JWT_SECRET secret is not configured." >&2
+            exit 1
+          fi
 
+      - name: Start backend with PM2
+        run: |
+          set -euo pipefail
+          export DATABASE_URL="${DATABASE_URL}"
+          if [[ "$DATABASE_URL" == *"supabase.co"* && "$DATABASE_URL" != *"sslmode="* ]]; then
+            if [[ "$DATABASE_URL" == *"?"* ]]; then
+              export DATABASE_URL="${DATABASE_URL}&sslmode=require"
+            else
+              export DATABASE_URL="${DATABASE_URL}?sslmode=require"
+            fi
+          fi
+          export JWT_SECRET="${JWT_SECRET:-ci-test-secret}"
+          export ORIGIN="${CLIENT_ORIGIN:-http://127.0.0.1:${FRONTEND_PORT}}"
+          export PORT="${BACKEND_PORT}"
+          export APP_URL="http://127.0.0.1:${FRONTEND_PORT}"
+          export SMTP_HOST="${SMTP_HOST:-localhost}"
+          export SMTP_PORT="${SMTP_PORT:-1025}"
+          export SMTP_SECURE="${SMTP_SECURE:-false}"
+          export SMTP_USER="${SMTP_USER:-test}"
+          export SMTP_PASS="${SMTP_PASS:-test}"
+          export SMTP_FROM="${SMTP_FROM:-ci@example.test}"
+          pm2 delete backend >/dev/null 2>&1 || true
+          pm2 start server.js --name backend --cwd backend --update-env
 
-      - name: Stop PM2 after tests
+      - name: Verify backend readiness
+        run: |
+          set -euo pipefail
+          for attempt in {1..30}; do
+            if curl --fail --silent "http://127.0.0.1:${BACKEND_PORT}/health" >/dev/null; then
+              echo "Backend is ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Backend failed to respond at /health" >&2
+          pm2 logs backend --lines 200 || true
+          exit 1
+
+      - name: Install Playwright tooling
+        run: |
+          npx playwright install --with-deps
+
+      - name: Start frontend preview
+        run: |
+          set -euo pipefail
+          pm2 delete frontend >/dev/null 2>&1 || true
+          pm2 start "npm run preview -- --host 0.0.0.0 --port ${FRONTEND_PORT}" --name frontend --cwd frontend --update-env
+          for attempt in {1..20}; do
+            if curl --fail --silent "http://127.0.0.1:${FRONTEND_PORT}" >/dev/null; then
+              echo "Frontend is ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Frontend failed to become ready"
+          pm2 logs frontend --lines 200 || true
+          exit 1
+
+      - name: Run Playwright CRUD suite
+        env:
+          PLAYWRIGHT_BASE_URL: http://127.0.0.1:${{ env.FRONTEND_PORT }}
+          PLAYWRIGHT_TEST_BASE_URL: http://127.0.0.1:${{ env.FRONTEND_PORT }}
+          API_BASE_URL: http://127.0.0.1:${{ env.BACKEND_PORT }}
+        run: |
+          npx playwright test
+
+      - name: Dump PM2 logs on failure
+        if: failure()
+        run: |
+          pm2 logs backend --lines 200 || true
+          pm2 logs frontend --lines 200 || true
+
+      - name: Stop background processes
         if: always()
-        run: pm2 kill
+        run: pm2 delete all >/dev/null 2>&1 || true
+        

@@ -1,5 +1,5 @@
-import { useState, type FormEvent } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useState, type FormEvent, type ChangeEvent } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "../store/auth";
 import BrandMark from "../components/BrandMark";
 
@@ -8,21 +8,132 @@ export default function Auth() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<{
+    name: string | null;
+    email: string | null;
+    password: string | null;
+  }>({
+    name: null,
+    email: null,
+    password: null,
+  });
   const { login, register, loading, error, clearError } = useAuthStore();
   const navigate = useNavigate();
 
+  type FieldKey = "name" | "email" | "password";
+
+  const getValue = (field: FieldKey) => {
+    switch (field) {
+      case "name":
+        return name;
+      case "email":
+        return email;
+      case "password":
+        return password;
+      default:
+        return "";
+    }
+  };
+
+  const validateField = (field: FieldKey, value: string, mode: "login" | "register") => {
+    const trimmed = value.trim();
+    if (field === "name") {
+      if (mode === "register" && !trimmed) return "Full name is required.";
+      return null;
+    }
+
+    if (field === "email") {
+      if (!trimmed) return "Email is required.";
+      const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailPattern.test(trimmed)) return "Please enter a valid email address.";
+      return null;
+    }
+
+    if (!trimmed) return "Password is required.";
+    if (trimmed.length < 6) return "Password must be at least 6 characters.";
+    return null;
+  };
+
+  const updateFieldError = (field: FieldKey, value: string, mode: "login" | "register") => {
+    setFieldErrors((prev) => ({
+      ...prev,
+      [field]: validateField(field, value, mode),
+    }));
+  };
+
+  const handleChange =
+    (field: FieldKey) =>
+    (event: ChangeEvent<HTMLInputElement>) => {
+      const nextValue = event.target.value;
+
+      if (field === "name") setName(nextValue);
+      if (field === "email") setEmail(nextValue);
+      if (field === "password") setPassword(nextValue);
+
+      updateFieldError(field, nextValue, tab);
+      if (error) clearError();
+    };
+
+  const handleBlur = (field: FieldKey) => () => {
+    updateFieldError(field, getValue(field), tab);
+  };
+
+  const resetFieldState = () => {
+    setFieldErrors({
+      name: null,
+      email: null,
+      password: null,
+    });
+  };
+
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
+    const trimmedValues = {
+      name: name.trim(),
+      email: email.trim(),
+      password: password.trim(),
+    };
+
+    const newErrors: typeof fieldErrors = {
+      name: validateField("name", trimmedValues.name, tab),
+      email: validateField("email", trimmedValues.email, tab),
+      password: validateField("password", trimmedValues.password, tab),
+    };
+
     if (tab === "login") {
-      await login({ email, password });
-    } else {
-      await register({ email, password, name });
+      newErrors.name = null;
     }
-    if (!useAuthStore.getState().error) navigate("/dashboard");
+
+    setFieldErrors(newErrors);
+    const hasErrors = Object.values(newErrors).some(Boolean);
+    if (hasErrors) {
+      return;
+    }
+
+    clearError();
+    setEmail(trimmedValues.email);
+    setPassword(trimmedValues.password);
+    if (tab === "register") {
+      setName(trimmedValues.name);
+    }
+
+    if (tab === "login") {
+      await login({ email: trimmedValues.email, password: trimmedValues.password });
+    } else {
+      await register({
+        email: trimmedValues.email,
+        password: trimmedValues.password,
+        name: trimmedValues.name,
+      });
+    }
+    if (!useAuthStore.getState().error) {
+      navigate(tab === "register" ? "/family" : "/dashboard");
+    }
   }
 
   const switchTab = (mode: "login" | "register") => {
     setTab(mode);
+    resetFieldState();
     clearError();
   };
 
@@ -78,52 +189,64 @@ export default function Auth() {
               <div className="space-y-1.5">
                 <label className="text-sm font-medium text-gray-700">Full Name</label>
                 <input
-                  className="w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm focus:border-primary focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  className={`w-full rounded-2xl border ${
+                    fieldErrors.name ? "border-red-300 bg-red-50/30" : "border-gray-200 bg-gray-50"
+                  } px-4 py-3 text-sm focus:border-primary focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20`}
                   value={name}
-                  onChange={(e) => {
-                    setName(e.target.value);
-                    if (error) clearError();
-                  }}
+                  onChange={handleChange("name")}
+                  onBlur={handleBlur("name")}
                   placeholder="Enter your full name"
-                  required
                   autoComplete="off"
+                  aria-invalid={Boolean(fieldErrors.name)}
+                  aria-describedby="auth-name-error"
                 />
+                <p id="auth-name-error" className="min-h-[18px] text-xs text-red-600">
+                  {fieldErrors.name}
+                </p>
               </div>
             )}
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-gray-700">Email</label>
               <input
                 type="email"
-                className="w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm focus:border-primary focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20"
+                className={`w-full rounded-2xl border ${
+                  fieldErrors.email ? "border-red-300 bg-red-50/30" : "border-gray-200 bg-gray-50"
+                } px-4 py-3 text-sm focus:border-primary focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20`}
                 value={email}
-                onChange={(e) => {
-                  setEmail(e.target.value);
-                  if (error) clearError();
-                }}
+                onChange={handleChange("email")}
+                onBlur={handleBlur("email")}
                 placeholder="your@email.com"
-                required
                 autoComplete="off"
+                aria-invalid={Boolean(fieldErrors.email)}
+                aria-describedby="auth-email-error"
               />
+              <p id="auth-email-error" className="min-h-[18px] text-xs text-red-600">
+                {fieldErrors.email}
+              </p>
             </div>
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-gray-700">Password</label>
               <input
                 type="password"
-                className="w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm focus:border-primary focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20"
+                className={`w-full rounded-2xl border ${
+                  fieldErrors.password ? "border-red-300 bg-red-50/30" : "border-gray-200 bg-gray-50"
+                } px-4 py-3 text-sm focus:border-primary focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20`}
                 value={password}
-                onChange={(e) => {
-                  setPassword(e.target.value);
-                  if (error) clearError();
-                }}
+                onChange={handleChange("password")}
+                onBlur={handleBlur("password")}
                 placeholder="********"
-                required
                 autoComplete="off"
+                aria-invalid={Boolean(fieldErrors.password)}
+                aria-describedby="auth-password-error"
               />
+              <p id="auth-password-error" className="min-h-[18px] text-xs text-red-600">
+                {fieldErrors.password}
+              </p>
             </div>
             {error && (
-              <p className="rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
+              <div className="rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
                 {error}
-              </p>
+              </div>
             )}
             <button
               disabled={loading}
@@ -133,21 +256,16 @@ export default function Auth() {
             </button>
           </form>
 
-          <div className="mt-6 space-y-3 text-center text-sm">
-            <Link className="font-semibold text-primary hover:underline" to="/invite">
-              Join with invite link
-            </Link>
-            <p className="text-gray-500">
-              {oppositeTabText.text}{" "}
-              <button
-                type="button"
-                onClick={oppositeTabText.target}
-                className="font-semibold text-primary hover:underline"
-              >
-                {oppositeTabText.action}
-              </button>
-            </p>
-          </div>
+          <p className="mt-6 text-center text-sm text-gray-500">
+            {oppositeTabText.text}{" "}
+            <button
+              type="button"
+              onClick={oppositeTabText.target}
+              className="font-semibold text-primary hover:underline"
+            >
+              {oppositeTabText.action}
+            </button>
+          </p>
         </div>
       </div>
     </main>

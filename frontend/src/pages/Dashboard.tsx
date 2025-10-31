@@ -13,9 +13,7 @@ export default function Dashboard() {
   const { mode, toggle } = useThemeStore();
   const isDark = mode === "dark";
 
-  const familyLabel = user?.familyName
-    ? `${user.familyName} Family`
-    : "Family Dashboard";
+  const familyLabel = user?.familyLabel?.trim() || "Family Dashboard";
   const greetingName =
     user?.firstName || user?.name || user?.fullName || "there";
 

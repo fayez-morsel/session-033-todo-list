@@ -37,7 +37,7 @@ function Item({ to, icon: Icon, label }: ItemProps) {
 
 export default function BottomNav() {
   const { pathname } = useLocation();
-  const hide = ["/", "/auth", "/invite"].includes(pathname);
+  const hide = ["/", "/auth", "/invite", "/family"].includes(pathname);
   if (hide) return null;
 
   return (
