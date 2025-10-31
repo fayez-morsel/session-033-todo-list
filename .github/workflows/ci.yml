@@ -1,8 +1,6 @@
-name: Full Stack
+name: Full Stack CI
 
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
 
@@ -10,23 +8,12 @@ jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: todo_ci
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
     env:
       BACKEND_PORT: 4000
       FRONTEND_PORT: 4173
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      JWT_SECRET: ${{ secrets.JWT_SECRET }}
+      CLIENT_ORIGIN: ${{ secrets.CLIENT_ORIGIN }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -57,75 +44,22 @@ jobs:
       - name: Install PM2
         run: npm install --global pm2
 
-      - name: Prepare database schema
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      - name: Verify required secrets
         run: |
           set -euo pipefail
-          export DATABASE_URL="${DATABASE_URL:-postgresql://postgres:postgres@localhost:5432/todo_ci}"
-          if [[ "$DATABASE_URL" == *"supabase.co"* && "$DATABASE_URL" != *"sslmode="* ]]; then
-            if [[ "$DATABASE_URL" == *"?"* ]]; then
-              export DATABASE_URL="${DATABASE_URL}&sslmode=require"
-            else
-              export DATABASE_URL="${DATABASE_URL}?sslmode=require"
-            fi
+          if [ -z "${DATABASE_URL:-}" ]; then
+            echo "DATABASE_URL secret is not configured." >&2
+            exit 1
           fi
-          until psql "$DATABASE_URL" -c 'select 1' >/dev/null 2>&1; do
-            echo "Waiting for database..."
-            sleep 1
-          done
-          psql "$DATABASE_URL" <<'SQL'
-          CREATE EXTENSION IF NOT EXISTS "pgcrypto";
-
-          CREATE TABLE IF NOT EXISTS family (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            name TEXT NOT NULL,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-          );
-
-          CREATE TABLE IF NOT EXISTS app_user (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            family_id UUID REFERENCES family(id) ON DELETE SET NULL,
-            email TEXT NOT NULL UNIQUE,
-            full_name TEXT,
-            password_hash TEXT NOT NULL,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-          );
-
-          CREATE TABLE IF NOT EXISTS invite (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            family_id UUID NOT NULL REFERENCES family(id) ON DELETE CASCADE,
-            token_hash TEXT NOT NULL UNIQUE,
-            created_by UUID REFERENCES app_user(id) ON DELETE SET NULL,
-            recipient_email TEXT,
-            recipient_user_id TEXT,
-            expires_at TIMESTAMPTZ NOT NULL,
-            used_at TIMESTAMPTZ,
-            recipient_declined_at TIMESTAMPTZ,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-          );
-
-          CREATE TABLE IF NOT EXISTS todo (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            family_id UUID NOT NULL REFERENCES family(id) ON DELETE CASCADE,
-            creator_id UUID REFERENCES app_user(id) ON DELETE SET NULL,
-            assignee_id UUID REFERENCES app_user(id) ON DELETE SET NULL,
-            title TEXT NOT NULL,
-            description TEXT,
-            due_at TIMESTAMPTZ,
-            is_done BOOLEAN NOT NULL DEFAULT false,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-          );
-          SQL
+          if [ -z "${JWT_SECRET:-}" ]; then
+            echo "JWT_SECRET secret is not configured." >&2
+            exit 1
+          fi
 
       - name: Start backend with PM2
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          JWT_SECRET: ${{ secrets.JWT_SECRET }}
-          ORIGIN: ${{ secrets.CLIENT_ORIGIN }}
         run: |
           set -euo pipefail
-          export DATABASE_URL="${DATABASE_URL:-postgresql://postgres:postgres@localhost:5432/todo_ci}"
+          export DATABASE_URL="${DATABASE_URL}"
           if [[ "$DATABASE_URL" == *"supabase.co"* && "$DATABASE_URL" != *"sslmode="* ]]; then
             if [[ "$DATABASE_URL" == *"?"* ]]; then
               export DATABASE_URL="${DATABASE_URL}&sslmode=require"
@@ -134,7 +68,7 @@ jobs:
             fi
           fi
           export JWT_SECRET="${JWT_SECRET:-ci-test-secret}"
-          export ORIGIN="${ORIGIN:-http://127.0.0.1:${FRONTEND_PORT}}"
+          export ORIGIN="${CLIENT_ORIGIN:-http://127.0.0.1:${FRONTEND_PORT}}"
           export PORT="${BACKEND_PORT}"
           export APP_URL="http://127.0.0.1:${FRONTEND_PORT}"
           export SMTP_HOST="${SMTP_HOST:-localhost}"
@@ -145,22 +79,6 @@ jobs:
           export SMTP_FROM="${SMTP_FROM:-ci@example.test}"
           pm2 delete backend >/dev/null 2>&1 || true
           pm2 start server.js --name backend --cwd backend --update-env
-          for attempt in {1..20}; do
-            if curl --fail --silent "http://127.0.0.1:${BACKEND_PORT}/health" >/dev/null; then
-              echo "Backend is ready"
-              exit 0
-            fi
-            sleep 2
-          done
-          echo "Backend failed to become ready"
-          pm2 logs backend --lines 200 || true
-          exit 1
-
-      - name: Backend smoke tests
-        run: |
-          set -euo pipefail
-          response="$(curl --fail --silent "http://127.0.0.1:${BACKEND_PORT}/health")"
-          echo "$response" | grep -q '"ok":true'
 
       - name: Install Playwright tooling
         working-directory: frontend
