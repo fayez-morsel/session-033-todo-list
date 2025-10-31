@@ -10,7 +10,7 @@ jobs:
     timeout-minutes: 20
     env:
       BACKEND_PORT: 4000
-      FRONTEND_PORT: 4173
+      FRONTEND_PORT: 5173
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       JWT_SECRET: ${{ secrets.JWT_SECRET }}
       CLIENT_ORIGIN: ${{ secrets.CLIENT_ORIGIN }}
@@ -24,8 +24,12 @@ jobs:
           node-version: 20
           cache: npm
           cache-dependency-path: |
+            package-lock.json
             backend/package-lock.json
             frontend/package-lock.json
+
+      - name: Install root dependencies
+        run: npm ci
 
       - name: Install backend dependencies
         working-directory: backend
@@ -80,10 +84,23 @@ jobs:
           pm2 delete backend >/dev/null 2>&1 || true
           pm2 start server.js --name backend --cwd backend --update-env
 
-      - name: Install Playwright tooling
-        working-directory: frontend
+      - name: Verify backend readiness
         run: |
-          npx --yes @playwright/test@1.49.0 install --with-deps
+          set -euo pipefail
+          for attempt in {1..30}; do
+            if curl --fail --silent "http://127.0.0.1:${BACKEND_PORT}/health" >/dev/null; then
+              echo "Backend is ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Backend failed to respond at /health" >&2
+          pm2 logs backend --lines 200 || true
+          exit 1
+
+      - name: Install Playwright tooling
+        run: |
+          npx playwright install --with-deps
 
       - name: Start frontend preview
         run: |
@@ -102,13 +119,12 @@ jobs:
           exit 1
 
       - name: Run Playwright CRUD suite
-        working-directory: frontend
         env:
           PLAYWRIGHT_BASE_URL: http://127.0.0.1:${{ env.FRONTEND_PORT }}
           PLAYWRIGHT_TEST_BASE_URL: http://127.0.0.1:${{ env.FRONTEND_PORT }}
           API_BASE_URL: http://127.0.0.1:${{ env.BACKEND_PORT }}
         run: |
-          npx --yes @playwright/test@1.49.0 test
+          npx playwright test
 
       - name: Dump PM2 logs on failure
         if: failure()
