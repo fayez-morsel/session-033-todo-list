@@ -1,5 +1,7 @@
 const { test, expect } = require("@playwright/test");
 
+test.skip(!process.env.CI, "Playwright CRUD test runs only in CI");
+
 test("user can create, view, and delete a task", async ({ page }) => {
   const unique = Date.now();
   const email = `playwright.${unique}@example.com`;
