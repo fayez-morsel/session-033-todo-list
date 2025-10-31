@@ -3,9 +3,24 @@ import bcrypt from "bcrypt";
 import crypto from "crypto";
 import { q } from "../db.js";
 import { signToken } from "../auth.js";
-import { splitFullName, formatUserRow } from "../utils/names.js";
+import { formatUserRow } from "../utils/names.js";
 
 const router = express.Router();
+
+let ensuredFamilyNullable = false;
+
+async function ensureFamilyNullable() {
+  if (ensuredFamilyNullable) return;
+  try {
+    await q(`ALTER TABLE app_user ALTER COLUMN family_id DROP NOT NULL`);
+  } catch (err) {
+    // 42701: duplicate object; 42704: undefined object; ignore both since column might already be nullable
+    if (!["42701", "42704"].includes(err?.code)) {
+      console.error("ensure family nullable failed", err);
+    }
+  }
+  ensuredFamilyNullable = true;
+}
 
 /**
  * POST /auth/register
@@ -17,23 +32,14 @@ router.post("/register", async (req, res) => {
   if (!trimmedName || !trimmedEmail || !password)
     return res.status(400).json({ error: "Missing fields" });
 
-  const { firstName } = splitFullName(trimmedName);
-  const fallbackName =
-    firstName || trimmedName || (trimmedEmail.includes("@") ? trimmedEmail.split("@")[0] : "");
-  const familyLabel = `${fallbackName}'s family`;
-
   try {
+    await ensureFamilyNullable();
     const hash = await bcrypt.hash(password, 10);
     const { rows } = await q(
-      `WITH new_family AS (
-         INSERT INTO family(name)
-         VALUES($1)
-         RETURNING id
-       )
-       INSERT INTO app_user(family_id, email, full_name, password_hash)
-       SELECT id, $2, $3, $4 FROM new_family
-       RETURNING id, family_id, email, full_name`,
-      [familyLabel, trimmedEmail.toLowerCase(), trimmedName, hash]
+      `INSERT INTO app_user(email, full_name, password_hash)
+       VALUES($1, $2, $3)
+       RETURNING id, family_id, email, full_name, NULL::text AS family_name`,
+      [trimmedEmail.toLowerCase(), trimmedName, hash]
     );
 
     const dbUser = rows[0];
@@ -59,7 +65,13 @@ router.post("/login", async (req, res) => {
     return res.status(400).json({ error: "Missing fields" });
 
   try {
-    const { rows } = await q("SELECT * FROM app_user WHERE email=$1", [trimmedEmail]);
+    const { rows } = await q(
+      `SELECT u.*, f.name AS family_name
+       FROM app_user u
+       LEFT JOIN family f ON u.family_id = f.id
+       WHERE u.email=$1`,
+      [trimmedEmail]
+    );
     if (!rows.length)
       return res.status(401).json({ error: "Invalid credentials" });
 
@@ -88,6 +100,7 @@ router.post("/accept-invite", async (req, res) => {
     return res.status(400).json({ error: "Missing fields" });
 
   try {
+    await ensureFamilyNullable();
     const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
     const { rows: invs } = await q(
       `SELECT * FROM invite
@@ -100,35 +113,6 @@ router.post("/accept-invite", async (req, res) => {
       return res.status(400).json({ error: "Invalid or expired invite" });
     const inv = invs[0];
 
-    const inviteNameParts = splitFullName(trimmedName);
-    const inviteFamily = (inviteNameParts.familyName || "").trim();
-    if (!inviteFamily) {
-      return res
-        .status(400)
-        .json({ error: "Please include your family name to join this family." });
-    }
-
-    const { rows: owners } = await q(
-      `SELECT full_name
-       FROM app_user
-       WHERE family_id=$1
-       ORDER BY created_at ASC
-       LIMIT 1`,
-      [inv.family_id]
-    );
-    if (owners.length) {
-      const ownerParts = splitFullName(owners[0].full_name || "");
-      const ownerFamily = (ownerParts.familyName || "").trim();
-      if (
-        ownerFamily &&
-        ownerFamily.toLowerCase() !== inviteFamily.toLowerCase()
-      ) {
-        return res
-          .status(403)
-          .json({ error: "Family name does not match this family." });
-      }
-    }
-
     const { rows: existing } = await q(
       "SELECT 1 FROM app_user WHERE email=$1",
       [trimmedEmail]
@@ -139,7 +123,7 @@ router.post("/accept-invite", async (req, res) => {
     const { rows: usr } = await q(
       `INSERT INTO app_user(family_id, email, full_name, password_hash)
        VALUES($1,$2,$3,$4)
-       RETURNING id, family_id, email, full_name`,
+       RETURNING id, family_id, email, full_name, (SELECT name FROM family WHERE id=$1) AS family_name`,
       [inv.family_id, trimmedEmail, trimmedName, hash]
     );
 

@@ -12,9 +12,10 @@ export function splitFullName(rawName) {
 
 export function formatUserRow(row = {}) {
   const id = row.id;
-  const familyId = row.family_id ?? row.familyId;
+  const familyId = row.family_id ?? row.familyId ?? null;
   const email = row.email ?? "";
   const fullNameRaw = row.full_name ?? row.fullName ?? "";
+  const familyWorkspaceRaw = row.family_name ?? row.familyLabel ?? null;
   const { firstName, familyName } = splitFullName(fullNameRaw);
 
   const fallbackFirst =
@@ -26,6 +27,11 @@ export function formatUserRow(row = {}) {
   const fullName =
     fullNameRaw.trim() || [fallbackFirst, familyName].filter(Boolean).join(" ").trim();
 
+  const familyLabel =
+    typeof familyWorkspaceRaw === "string" && familyWorkspaceRaw.trim().length
+      ? familyWorkspaceRaw.trim()
+      : null;
+
   return {
     id,
     familyId,
@@ -34,6 +40,6 @@ export function formatUserRow(row = {}) {
     firstName: fallbackFirst,
     familyName: familyName || undefined,
     fullName: fullName || undefined,
+    familyLabel,
   };
 }
-

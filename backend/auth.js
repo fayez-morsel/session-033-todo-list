@@ -3,11 +3,12 @@ import jwt from 'jsonwebtoken';
 
 
 export function signToken(user) {
-return jwt.sign(
-{ uid: user.id, fid: user.family_id, email: user.email },
-process.env.JWT_SECRET,
-{ expiresIn: '7d' }
-);
+  const familyId = user.family_id ?? user.familyId ?? null;
+  return jwt.sign(
+    { uid: user.id, fid: familyId, email: user.email },
+    process.env.JWT_SECRET,
+    { expiresIn: "7d" }
+  );
 }
 
 

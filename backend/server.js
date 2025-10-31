@@ -1,12 +1,11 @@
+import "./env.js";
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
 import authRoutes from './routes/auth.routes.js';
 import inviteRoutes from './routes/invite.routes.js';
 import todoRoutes from './routes/todo.routes.js';
 import userRoutes from './routes/user.routes.js';
-
-dotenv.config();
+import familyRoutes from './routes/family.routes.js';
 
 const app = express();
 
@@ -22,6 +21,7 @@ app.use('/auth', authRoutes);
 app.use('/invites', inviteRoutes);
 app.use('/todos', todoRoutes);
 app.use('/users', userRoutes);
+app.use('/families', familyRoutes);
 
 const port = process.env.PORT || 4000;
 app.listen(port, () => {

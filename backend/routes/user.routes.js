@@ -15,7 +15,7 @@ router.get('/', requireAuth, async (req, res) => {
       [req.user.fid]
     );
     const { rows: ownerRows } = await q(
-      'SELECT id FROM app_user WHERE family_id=$1 ORDER BY created_at ASC LIMIT 1',
+      'SELECT id FROM app_user WHERE family_id=$1 ORDER BY created_at NULLS FIRST, id ASC LIMIT 1',
       [req.user.fid]
     );
     const ownerId = ownerRows[0]?.id;
