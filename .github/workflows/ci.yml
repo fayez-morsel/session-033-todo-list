@@ -1,4 +1,4 @@
-name: Full Stack CI
+name: Full Stack
 
 on:
   push:
@@ -201,3 +201,4 @@ jobs:
       - name: Stop background processes
         if: always()
         run: pm2 delete all >/dev/null 2>&1 || true
+        
