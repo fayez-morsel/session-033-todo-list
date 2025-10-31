@@ -7,7 +7,8 @@ export interface User {
   firstName?: string;
   familyName?: string;
   email: string;
-  familyId: ID;
+  familyId: ID | null;
+  familyLabel?: string | null;
 }
 
 export interface Member {

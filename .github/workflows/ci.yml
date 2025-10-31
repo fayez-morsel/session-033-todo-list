@@ -1,48 +1,203 @@
 name: Full Stack CI
 
 on:
+  push:
+    branches: [main]
   pull_request:
     branches: [main]
 
 jobs:
-  ci-test:
-    name: Run Full Stack Tests
-    timeout-minutes: 10
+  test:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: todo_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     env:
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      PORT: 4000
-      NODE_ENV: test
-
+      BACKEND_PORT: 4000
+      FRONTEND_PORT: 4173
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
 
       - name: Install backend dependencies
         working-directory: backend
         run: npm ci
 
-      - name: Install PM2 globally
-        run: npm install -g pm2
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
 
-      - name: Start backend server with PM2
-        working-directory: backend
+      - name: Build frontend bundle
+        working-directory: frontend
+        env:
+          VITE_API_URL: http://127.0.0.1:${{ env.BACKEND_PORT }}
+        run: npm run build
+
+      - name: Install PM2
+        run: npm install --global pm2
+
+      - name: Prepare database schema
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
-          echo "Files in backend directory:"
-          ls -la
-          echo "Starting backend server with PM2..."
-          # Adjust this path if your entry file is named differently
-          pm2 start server.js 
-          echo "Checking if server responds..."
-          curl -I http://localhost:4000 || echo "⚠️ Server not responding, check logs below"
-          pm2 logs backend --lines 20
+          set -euo pipefail
+          export DATABASE_URL="${DATABASE_URL:-postgresql://postgres:postgres@localhost:5432/todo_ci}"
+          if [[ "$DATABASE_URL" == *"supabase.co"* && "$DATABASE_URL" != *"sslmode="* ]]; then
+            if [[ "$DATABASE_URL" == *"?"* ]]; then
+              export DATABASE_URL="${DATABASE_URL}&sslmode=require"
+            else
+              export DATABASE_URL="${DATABASE_URL}?sslmode=require"
+            fi
+          fi
+          until psql "$DATABASE_URL" -c 'select 1' >/dev/null 2>&1; do
+            echo "Waiting for database..."
+            sleep 1
+          done
+          psql "$DATABASE_URL" <<'SQL'
+          CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
+          CREATE TABLE IF NOT EXISTS family (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            name TEXT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+          );
 
-      - name: Stop PM2 after tests
+          CREATE TABLE IF NOT EXISTS app_user (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            family_id UUID REFERENCES family(id) ON DELETE SET NULL,
+            email TEXT NOT NULL UNIQUE,
+            full_name TEXT,
+            password_hash TEXT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+          );
+
+          CREATE TABLE IF NOT EXISTS invite (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            family_id UUID NOT NULL REFERENCES family(id) ON DELETE CASCADE,
+            token_hash TEXT NOT NULL UNIQUE,
+            created_by UUID REFERENCES app_user(id) ON DELETE SET NULL,
+            recipient_email TEXT,
+            recipient_user_id TEXT,
+            expires_at TIMESTAMPTZ NOT NULL,
+            used_at TIMESTAMPTZ,
+            recipient_declined_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+          );
+
+          CREATE TABLE IF NOT EXISTS todo (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            family_id UUID NOT NULL REFERENCES family(id) ON DELETE CASCADE,
+            creator_id UUID REFERENCES app_user(id) ON DELETE SET NULL,
+            assignee_id UUID REFERENCES app_user(id) ON DELETE SET NULL,
+            title TEXT NOT NULL,
+            description TEXT,
+            due_at TIMESTAMPTZ,
+            is_done BOOLEAN NOT NULL DEFAULT false,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+          );
+          SQL
+
+      - name: Start backend with PM2
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          ORIGIN: ${{ secrets.CLIENT_ORIGIN }}
+        run: |
+          set -euo pipefail
+          export DATABASE_URL="${DATABASE_URL:-postgresql://postgres:postgres@localhost:5432/todo_ci}"
+          if [[ "$DATABASE_URL" == *"supabase.co"* && "$DATABASE_URL" != *"sslmode="* ]]; then
+            if [[ "$DATABASE_URL" == *"?"* ]]; then
+              export DATABASE_URL="${DATABASE_URL}&sslmode=require"
+            else
+              export DATABASE_URL="${DATABASE_URL}?sslmode=require"
+            fi
+          fi
+          export JWT_SECRET="${JWT_SECRET:-ci-test-secret}"
+          export ORIGIN="${ORIGIN:-http://127.0.0.1:${FRONTEND_PORT}}"
+          export PORT="${BACKEND_PORT}"
+          export APP_URL="http://127.0.0.1:${FRONTEND_PORT}"
+          export SMTP_HOST="${SMTP_HOST:-localhost}"
+          export SMTP_PORT="${SMTP_PORT:-1025}"
+          export SMTP_SECURE="${SMTP_SECURE:-false}"
+          export SMTP_USER="${SMTP_USER:-test}"
+          export SMTP_PASS="${SMTP_PASS:-test}"
+          export SMTP_FROM="${SMTP_FROM:-ci@example.test}"
+          pm2 delete backend >/dev/null 2>&1 || true
+          pm2 start server.js --name backend --cwd backend --update-env
+          for attempt in {1..20}; do
+            if curl --fail --silent "http://127.0.0.1:${BACKEND_PORT}/health" >/dev/null; then
+              echo "Backend is ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Backend failed to become ready"
+          pm2 logs backend --lines 200 || true
+          exit 1
+
+      - name: Backend smoke tests
+        run: |
+          set -euo pipefail
+          response="$(curl --fail --silent "http://127.0.0.1:${BACKEND_PORT}/health")"
+          echo "$response" | grep -q '"ok":true'
+
+      - name: Install Playwright tooling
+        working-directory: frontend
+        run: |
+          npx --yes @playwright/test@1.49.0 install --with-deps
+
+      - name: Start frontend preview
+        run: |
+          set -euo pipefail
+          pm2 delete frontend >/dev/null 2>&1 || true
+          pm2 start "npm run preview -- --host 0.0.0.0 --port ${FRONTEND_PORT}" --name frontend --cwd frontend --update-env
+          for attempt in {1..20}; do
+            if curl --fail --silent "http://127.0.0.1:${FRONTEND_PORT}" >/dev/null; then
+              echo "Frontend is ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Frontend failed to become ready"
+          pm2 logs frontend --lines 200 || true
+          exit 1
+
+      - name: Run Playwright CRUD suite
+        working-directory: frontend
+        env:
+          PLAYWRIGHT_BASE_URL: http://127.0.0.1:${{ env.FRONTEND_PORT }}
+          PLAYWRIGHT_TEST_BASE_URL: http://127.0.0.1:${{ env.FRONTEND_PORT }}
+          API_BASE_URL: http://127.0.0.1:${{ env.BACKEND_PORT }}
+        run: |
+          npx --yes @playwright/test@1.49.0 test
+
+      - name: Dump PM2 logs on failure
+        if: failure()
+        run: |
+          pm2 logs backend --lines 200 || true
+          pm2 logs frontend --lines 200 || true
+
+      - name: Stop background processes
         if: always()
-        run: pm2 kill
+        run: pm2 delete all >/dev/null 2>&1 || true

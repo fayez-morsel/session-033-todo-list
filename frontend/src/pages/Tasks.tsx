@@ -189,6 +189,7 @@ export default function Tasks() {
           ? e.target.value
           : e.target.value;
       setForm((prev) => ({ ...prev, [field]: value }));
+      if (formError) setFormError(null);
     };
 
   const save = async () => {
@@ -482,12 +483,13 @@ export default function Tasks() {
             <select
               className="w-full rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm focus:border-primary focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20"
               value={form.assigneeId ?? ""}
-              onChange={(e) =>
+              onChange={(e) => {
                 setForm((prev) => ({
                   ...prev,
                   assigneeId: e.target.value ? Number(e.target.value) : null,
-                }))
-              }
+                }));
+                if (formError) setFormError(null);
+              }}
             >
               <option value="">Select an assignee</option>
               {members.map((member) => (
@@ -514,11 +516,13 @@ export default function Tasks() {
               Mark as completed
             </label>
           </div>
-          {formError && (
-            <p className="rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
-              {formError}
-            </p>
-          )}
+          <div className="min-h-[48px]">
+            {formError && (
+              <p className="rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
+                {formError}
+              </p>
+            )}
+          </div>
         </div>
       </Modal>
     </main>
